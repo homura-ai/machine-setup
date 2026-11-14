@@ -1,0 +1,15 @@
+STOP — PREPARED ONLY. Do not start or test agents on the new machine while the old one is active.
+This setup script performs NONE of these steps.
+1. On the old machine, finish work and fully stop all Claude Code and Codex processes/sessions.
+2. On the old machine: systemctl --user disable --now cliproxyapi cliproxyapi-claude
+3. On the old machine, fully quit T3 Code LAST, including background/server processes.
+4. Verify Claude Code, Codex, both proxies and T3 are ALL stopped on the old machine.
+   Keep its services disabled and do not reopen any agent there after switching.
+5. On the new machine only: systemctl --user enable --now cliproxyapi cliproxyapi-claude
+6. Log into each proxy account yourself on the new machine (once per account):
+   ~/.cli-proxy-api/app/cli-proxy-api -config ~/.cli-proxy-api/config.yaml -codex-login
+   ~/.cli-proxy-api/app/cli-proxy-api -config ~/.cli-proxy-api-claude/config.yaml -claude-login
+   Complete each browser sign-in personally. No OAuth/auth files were transferred.
+7. On the new machine: ~/.local/bin/t3-code
+   Open @REPO_DEST@; native Claude Code uses 8318, native Codex uses 8317.
+   Never use a Claude subscription through a client other than real Claude Code.

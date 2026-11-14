@@ -1,0 +1,44 @@
+# Applied at every depth; .git objects/refs and nested research repos ARE included.
+credentials/
+.env
+.env.*
+.envrc
+*.env
+*.env.*
+.secrets/
+secrets/
+secret.*
+secrets.*
+*credentials*
+*token*.json
+*token*.yaml
+*token*.yml
+auth.json
+auth.yaml
+auth.yml
+.auth/
+auth-dir/
+.ssh/
+.aws/
+.gnupg/
+.netrc
+.npmrc
+.pypirc
+.git-credentials
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+# Git configs can embed credentials in URLs, helpers, headers or include directives.
+.git/config
+.git/config.worktree
+.git/hooks/
+.git/lfs/
+.git/objects/info/alternates
+# Runtime auth/session stores, never needed to copy the project.
+.cli-proxy-api/
+.cli-proxy-api-claude/
+.codex/auth*
+.claude/.credentials*

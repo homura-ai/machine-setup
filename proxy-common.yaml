@@ -1,0 +1,72 @@
+# Non-secret CLIProxyAPI settings shared by both proxies (copied from a working setup with secrets dropped).
+config-version: 8
+plugins:
+  enabled: false
+  dir: plugins
+  configs:
+    example:
+      enabled: true
+      priority: 1
+      config1: true
+      config2: string
+      config3: 3
+      mode: safe
+quota-exceeded:
+  switch-project: true
+  switch-preview-model: true
+routing:
+  strategy: round-robin
+  session-affinity: true
+  session-affinity-ttl: 1h
+  force-model-prefix: false
+  cooldown:
+    disable-cooling: false
+    save-cooldown-status: false
+    transient-error-cooldown-seconds: 0
+  retry:
+    request-retry: 3
+    max-retry-credentials: 0
+    max-retry-interval: 30
+requests:
+  proxy-url: ''
+  passthrough-headers: false
+  nonstream-keepalive-interval: 0
+multimedia:
+  disable-image-generation: false
+  video-result-auth-cache-ttl: 3h
+observability:
+  logs:
+    debug: false
+    logging-to-file: true
+    logs-max-total-size-mb: 0
+    error-logs-max-files: 10
+  pprof:
+    enable: false
+    addr: 127.0.0.1:8316
+  usage:
+    usage-statistics-enabled: true
+    redis-usage-queue-retention-seconds: 60
+upstream:
+  claude:
+    disable-claude-cloak-mode: false
+credentials:
+  concurrency:
+    cpa-heartbeat-timeout: 3s
+    cpa-cancel-bound: 5s
+    reclaim-grace: 5s
+    cleanup-interval: 5s
+    release-flush-interval: 250ms
+    release-max-backoff: 2s
+    busy-retry-min: 250ms
+    busy-retry-max: 1s
+    max-limit: 1000000
+  in-flight:
+    snapshot-interval: 2s
+    stale-after: 10s
+    max-part-bytes: 262144
+    max-part-count: 64
+    max-revision-bytes: 16777216
+    max-aggregate-groups: 100000
+    max-details: 10000
+    max-string-bytes: 256
+    staging-retention: 1m
