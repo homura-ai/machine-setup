@@ -21,7 +21,8 @@ Run `setup-new-machine.sh` on the **old** machine. Over SSH it:
 6. compares the binaries' checksums, never running them;
 7. copies the repo with its Git history and nested repos (`rsync-excludes`
    keeps out credentials, `.env` files, keys, auth stores and `.git/config`),
-   then checks that every Git HEAD and status matches (`verify-repo.py`);
+   then checks every Git HEAD and the status of the main repo and selected
+   nested repos (`verify-repo.py`);
 8. leaves both proxy units disabled (`verify-stopped.sh`) and prints the manual
    switch checklist (`SWITCH-CHECKLIST.txt`).
 
@@ -39,8 +40,9 @@ below have run.
 Copy `machine.env.example` to `machine.env` next to the script and edit it:
 destination host and user, SSH identity, Fedora version, the installed Claude
 Code, Codex and T3 Code versions to copy (the folder and file names on this
-machine), and the repo to copy. Each setting can also be given as an
-environment variable of the same name. `VERIFY_EXACT_STATUS` lists nested repos
+machine), and the repo to copy. Settings can also come from environment
+variables of the same name, but assignments in the sourced env file take
+precedence; `--host` overrides both. `VERIFY_EXACT_STATUS` lists nested repos
 (colon-separated top-level folder names) whose Git status must match exactly,
 not just their HEAD.
 
@@ -56,7 +58,8 @@ Read every command in the dry run before the real run. Establish SSH host-key
 trust with the new machine first: the script never accepts unknown keys.
 Reruns keep existing keys and back up replaced files under
 `~/.local/state/laptop-setup/backups/` on the new machine. There is nothing to
-install; to undo, delete the copied files on the new machine.
+install; to undo, restore replaced files from those backups and remove only
+files newly created by the setup on the new machine.
 
 ## Tests
 
