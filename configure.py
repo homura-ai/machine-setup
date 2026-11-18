@@ -128,13 +128,14 @@ WantedBy=default.target
         'env': {'ANTHROPIC_BASE_URL': 'http://127.0.0.1:8318',
                 'ANTHROPIC_AUTH_TOKEN': clients[8318]},
     }, indent=2) + '\n')
-    write(home / '.codex/config.toml', f'''model = "gpt-6.1-sol"
+    write(home / '.codex/config.toml', f'''model = "gpt-6.2-sol"
 model_reasoning_effort = "high"
 model_provider = "cliproxy"
 
 [model_providers.cliproxy]
 name = "CLIProxyAPI"
 base_url = "http://127.0.0.1:8317/v1"
+model_catalog_url = "http://127.0.0.1:8317/v1/models"
 wire_api = "responses"
 supports_websockets = true
 requires_openai_auth = false
