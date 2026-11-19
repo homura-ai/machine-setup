@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Local tests only: fake transport and fake OpenSSL, never contact any host."""
 import contextlib
+import hashlib
+import importlib.machinery
 import importlib.util
 import io
 import json
@@ -12,13 +14,14 @@ import subprocess
 import tempfile
 os.environ['VERIFY_EXACT_STATUS'] = 'research-a:research-b'
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 HERE = Path(__file__).resolve().parent
 
 
 def load(name, filename):
-    spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    loader = importlib.machinery.SourceFileLoader(name, str(HERE / filename))
+    spec = importlib.util.spec_from_loader(name, loader)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -50,8 +53,99 @@ class SetupTests(unittest.TestCase):
             self.assertNotIn(' -claude-login', before_stop)
             self.assertNotIn(' -codex-login', before_stop)
             # The emergency stop is pointed to, never installed or run.
-            self.assertIn('install\nagents-killall yourself', result.stdout)
-            self.assertNotIn('install.sh', before_stop)
+            self.assertIn('install\nagents-killall from its standalone repo', result.stdout)
+            self.assertNotIn('install.sh refuses', before_stop)
+            self.assertFalse((HERE / 'killall/agents-killall').exists())
+
+    def test_routes_both_clients_and_preserves_config_backups(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            claude = home / '.claude/settings.json'
+            codex = home / '.codex/config.toml'
+            for path in (claude, codex):
+                path.parent.mkdir()
+            claude.write_text(json.dumps({'env': {
+                'ANTHROPIC_BASE_URL': 'http://127.0.0.1:8318',
+                'ANTHROPIC_AUTH_TOKEN': 'old-claude-value',
+            }}))
+            codex.write_text(
+                'base_url = "http://127.0.0.1:8317/v1"\n'
+                'model_catalog_url = "http://127.0.0.1:8317/v1/models"\n'
+                'experimental_bearer_token = "old-codex-value"\n'
+            )
+            originals = {path: path.read_text() for path in (claude, codex)}
+            ssh = home / 'ssh'
+            ssh.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = "-N" ]; then\n'
+                '  [ "$*" = "-N -o ExitOnForwardFailure=yes -L 127.0.0.1:8318:127.0.0.1:8318'
+                ' -L 127.0.0.1:8317:127.0.0.1:8317 tester@proxy.example.net" ]\n'
+                '  exit $?\n'
+                'fi\n'
+                '[ "$1" = "tester@proxy.example.net" ] || exit 1\n'
+                'case "$5" in\n'
+                '  credentials/cliproxyapi-claude/client-key) echo fixture-claude ;;\n'
+                '  credentials/cliproxyapi/client-key) echo fixture-codex ;;\n'
+                '  *) exit 1 ;;\n'
+                'esac\n'
+            )
+            ssh.chmod(0o755)
+            result = subprocess.run(
+                ['bash', str(HERE / 'route-via-proxy.sh')],
+                env={**os.environ, 'HOME': str(home), 'PATH': f"{home}:{os.environ['PATH']}",
+                     'PROXY_HOST': 'proxy.example.net', 'PROXY_SSH_USER': 'tester'},
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(json.loads(claude.read_text())['env'], {
+                'ANTHROPIC_BASE_URL': 'http://127.0.0.1:8318',
+                'ANTHROPIC_AUTH_TOKEN': 'fixture-claude',
+            })
+            self.assertIn('base_url = "http://127.0.0.1:8317/v1"', codex.read_text())
+            self.assertIn('model_catalog_url = "http://127.0.0.1:8317/v1/models"', codex.read_text())
+            self.assertIn('experimental_bearer_token = "fixture-codex"', codex.read_text())
+            self.assertNotIn('fixture-', result.stdout + result.stderr)
+            for path, original in originals.items():
+                self.assertEqual(path.with_suffix(path.suffix + '.bak').read_text(), original)
+
+    def test_build_loader_preserves_existing_file_and_rolls_back_if_wake_cli_fails(self):
+        module = load('loader', 't3-load-build/t3-load-build')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            module.STATE = root
+            module.LOG = root / 'load.log'
+            module.GUARDS = ()
+            module.PAUSE_FILE = root / 'pause'
+            module.WAKE_THREAD = 'test-thread'
+            staged = root / 'new.AppImage.staged'
+            staged.write_bytes(b'new build')
+            digest = hashlib.sha256(staged.read_bytes()).hexdigest()
+            live = module.live_name(staged)
+            live.write_bytes(b'existing build')
+            wake = root / 'wake'
+            wake.write_text('test message')
+            deps = Mock()
+            deps.now.side_effect = module.Real.now
+            deps.sleep.return_value = None
+            deps.t3_running.return_value = True
+            deps.send.side_effect = module.Real.send
+
+            self.assertEqual(module.load(staged, digest, wake, deps=deps, settle=0), 1)
+            deps.stop_t3.assert_not_called()
+            self.assertEqual(live.read_bytes(), b'existing build')
+            self.assertTrue(staged.is_file())
+            self.assertFalse(module.PAUSE_FILE.exists())
+
+            replacement = root / 'new-version.AppImage'
+            with patch.object(module.subprocess, 'run', side_effect=[
+                subprocess.TimeoutExpired('t3', 30), FileNotFoundError(),
+                subprocess.CompletedProcess([], 0),
+            ]) as wake_calls:
+                self.assertEqual(module.load(staged, digest, wake, deps=deps, live=replacement, settle=0), 2)
+            self.assertEqual(wake_calls.call_count, 3)
+            self.assertEqual(deps.stop_t3.call_count, 2)
+            self.assertFalse(replacement.exists())
+            self.assertEqual(replacement.with_suffix('.AppImage.off').read_bytes(), b'new build')
+            self.assertEqual(live.read_bytes(), b'existing build')
 
     def test_configuration_keys_permissions_backups_and_idempotence(self):
         module = load('configure', 'configure.py')

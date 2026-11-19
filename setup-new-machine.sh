@@ -138,5 +138,5 @@ remote_script "$here/verify-stopped.sh"
 sed "s|@REPO_DEST@|$repo_dest|g" "$here/SWITCH-CHECKLIST.txt"
 # The emergency stop is a separate repo with a per-machine config; this script never installs it.
 printf '%s\n' 'Emergency stop: not installed by this script. On the new machine, install' \
-    'agents-killall yourself (killall/ in the homustack repo; its install.sh' \
-    'refuses until ~/.config/agents-killall/config.toml exists).'
+    'agents-killall from its standalone repo (see killall/README.md here); its' \
+    'install.sh refuses until ~/.config/agents-killall/config.toml exists.'
