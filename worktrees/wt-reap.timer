@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily finished-worktree cleanup
+[Timer]
+OnCalendar=*-*-* 05:30
+Persistent=true
+RandomizedDelaySec=15m
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Remove finished git worktrees (clean, pushed, idle 7 days)
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=%h/.local/bin/wt-reap --apply

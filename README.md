@@ -10,6 +10,7 @@ agents on it. Each piece stands alone.
 | `killall/` | Points to the standalone agents-killall tool and documents its config. |
 | `spawn-cap/` | Limits concurrent agent runs per thread subtree through a Claude Code or Codex hook. |
 | `t3-load-build/` | Loads a staged T3 Code build and rolls back if startup or a configured wake message fails. |
+| `worktrees/` | Creates reflinked Git worktrees and reaps stale clean checkouts. |
 | `gnome/` | Example GNOME preferences in dconf format. |
 
 ## Move to a new machine
