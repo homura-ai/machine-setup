@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# wt-reap [--apply] [--days N] [root...]
+set -uo pipefail
+
+apply=0
+days=7
+roots=()
+while (( $# )); do
+  case $1 in
+    --apply) apply=1 ;;
+    --days)
+      days=${2:-}
+      if [[ ! "$days" =~ ^[1-9][0-9]*$ ]]; then
+        echo 'wt-reap: --days requires a positive integer' >&2
+        exit 2
+      fi
+      shift ;;
+    --) shift; roots+=("$@"); break ;;
+    -*) echo "wt-reap: unknown option $1" >&2; exit 2 ;;
+    *) roots+=("$1") ;;
+  esac
+  shift
+done
+(( ${#roots[@]} )) || roots=("$HOME"/.t3/worktrees/*)
+
+for command in lsof findmnt; do
+  command -v "$command" >/dev/null || { echo "wt-reap: $command is required" >&2; exit 1; }
+done
+state=${XDG_STATE_HOME:-"$HOME/.local/state"}/wt-reap
+regexp='(^|/)(node_modules|target|dist|build|\.generated|\.vite-hooks|\.turbo|\.next)/$|\.tsbuildinfo$'
+count=0
+result=0
+
+clean() {
+  local flags status entry
+  flags=$(git -C "$1" ls-files -v) || return 1
+  # Git status can omit changes to these index entries.
+  [[ ! "$flags" =~ (^|$'\n')[a-zS]' ' ]] || return 1
+  status=$(git -C "$1" --no-optional-locks -c core.quotePath=false -c core.fsmonitor=false status --porcelain=v1 --ignored --untracked-files=normal 2>/dev/null) || return 1
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
+    [[ "$entry" == '!! '* && "${entry:3}" =~ $regexp ]] || return 1
+  done <<< "$status"
+}
+
+unmounted() {
+  local mounts encoded mount
+  mounts=$(findmnt --raw --noheadings --output TARGET) || return 1
+  while IFS= read -r encoded; do
+    printf -v mount '%b' "$encoded"
+    [[ "$mount" != "$1" && "$mount" != "$1/"* ]] || return 1
+  done <<< "$mounts"
+}
+
+for root in "${roots[@]}"; do
+  for worktree in "$root"/*/; do
+    worktree=${worktree%/}
+    [[ ! -L "$worktree" && -f "$worktree/.git" && ! -L "$worktree/.git" ]] || continue
+    worktree=$(realpath -e -- "$worktree") || continue
+    unmounted "$worktree" || continue
+    common=$(git -C "$worktree" rev-parse --path-format=absolute --git-common-dir) || continue
+    head=$(git -C "$worktree" rev-parse --verify HEAD) || continue
+    remote_branches=$(git -C "$worktree" for-each-ref --contains "$head" --format='%(refname)' refs/remotes) || continue
+    [[ -n "$remote_branches" ]] || continue
+    clean "$worktree" || continue
+    recent=$(find "$worktree" -xdev -name node_modules -prune -o -mtime "-$days" -print -quit) || continue
+    [[ -z "$recent" ]] || continue
+    open=
+    if open=$(lsof +D "$worktree" 2>&1); then
+      continue
+    else
+      [[ $? == 1 && -z "$open" ]] || continue
+    fi
+    if (( apply )); then
+      unmounted "$worktree" || continue
+      mkdir -p -- "$state" && touch -- "$state/log" || exit 1
+      branch=$(git -C "$worktree" branch --show-current) || continue
+      if git --git-dir="$common" worktree remove -- "$worktree" 2>>"$state/log"; then
+        printf '%s removed %q branch=%s head=%s\n' "$(date -Is)" "$worktree" "${branch:-detached}" "$head" >>"$state/log"
+      else
+        result=1
+        continue
+      fi
+    else
+      printf 'would remove %s\n' "$worktree"
+    fi
+    (( count += 1 ))
+  done
+done
+
+if (( apply )); then
+  printf 'wt-reap: %s worktree(s) removed\n' "$count"
+else
+  printf 'wt-reap: %s worktree(s) eligible\n' "$count"
+fi
+exit "$result"

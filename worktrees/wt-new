@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# wt-new <repo> <dest> [branch] [base]
+set -euo pipefail
+
+if (( $# < 2 || $# > 4 )); then
+  echo "Usage: wt-new <repo> <dest> [branch] [base]" >&2
+  exit 2
+fi
+
+repo=$(git -C "$1" rev-parse --show-toplevel)
+dest=$2
+target=$(realpath -m -- "$dest")
+branch=${3:-wt/$(basename -- "$dest")}
+base=${4:-HEAD}
+if [[ -e "$dest" || -L "$dest" ]]; then
+  echo "wt-new: $dest exists" >&2
+  exit 1
+fi
+
+if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+  git -C "$repo" worktree add -- "$target" "$branch" >&2
+else
+  git -C "$repo" worktree add -b "$branch" -- "$target" "$base" >&2
+fi
+
+# Let Git create the requested checkout first, including filters and file modes.
+# Replace regular files with reflinks only when the source has identical bytes.
+stage=$(mktemp -d -- "$target/.wt-new.XXXXXXXX")
+trap 'rm -rf -- "$stage"' EXIT
+source_head=$(git -C "$repo" rev-parse --path-format=absolute --git-path HEAD)
+if cp --reflink=always -- "$source_head" "$stage/probe" 2>/dev/null; then
+  while IFS= read -r -d '' path; do
+    source_file=$repo/$path
+    target_file=$target/$path
+    [[ -f "$source_file" && ! -L "$source_file" &&
+       -f "$target_file" && ! -L "$target_file" ]] || continue
+    if cmp -s -- "$source_file" "$target_file" &&
+       cp --reflink=always -- "$source_file" "$stage/file" 2>/dev/null &&
+       cmp -s -- "$stage/file" "$target_file" &&
+       chmod --reference="$target_file" -- "$stage/file"; then
+      mv -fT -- "$stage/file" "$target_file"
+    fi
+  done < <(git -C "$target" ls-files -z)
+
+  while IFS= read -r -d '' source_dir; do
+    path=${source_dir#"$repo"/}
+    target_dir=$target/$path
+    parent=${target_dir%/*}
+    [[ ! -e "$target_dir" && ! -L "$target_dir" && -d "$parent" ]] || continue
+    [[ $(realpath -- "$parent") == "$parent" ]] || continue
+    git -C "$target" check-ignore -q -- "$path/" || continue
+    if cp -a --reflink=always -- "$source_dir" "$stage/deps" 2>/dev/null; then
+      mv -nT -- "$stage/deps" "$target_dir"
+    fi
+    rm -rf -- "$stage/deps"
+  done < <(find "$repo" -name .git -prune -o -samefile "$target" -prune -o \
+    -type d -name node_modules -print0 -prune)
+fi
+
+echo "$dest"
